@@ -969,7 +969,7 @@
       }
       exports.createModuleLogger = createModuleLogger;
     }, {
-      "debug": 65
+      "debug": 20
     }],
     15: [function (require, module, exports) {
       "use strict";
@@ -990,7 +990,7 @@
         return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
       }
       exports.isObject = isObject;
-      const hasProperty = (object, name) => Object.hasOwnProperty.call(object, name);
+      const hasProperty = (objectToCheck, name) => Object.hasOwnProperty.call(objectToCheck, name);
       exports.hasProperty = hasProperty;
       var JsonSize;
       (function (JsonSize) {
@@ -1172,10 +1172,614 @@
       exports.satisfiesVersionRange = satisfiesVersionRange;
     }, {
       "./assert": 5,
-      "semver": 47,
+      "semver": 51,
       "superstruct": 68
     }],
     20: [function (require, module, exports) {
+      (function (process) {
+        (function () {
+          exports.formatArgs = formatArgs;
+          exports.save = save;
+          exports.load = load;
+          exports.useColors = useColors;
+          exports.storage = localstorage();
+          exports.destroy = (() => {
+            let warned = false;
+            return () => {
+              if (!warned) {
+                warned = true;
+                console.warn('Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.');
+              }
+            };
+          })();
+          exports.colors = ['#0000CC', '#0000FF', '#0033CC', '#0033FF', '#0066CC', '#0066FF', '#0099CC', '#0099FF', '#00CC00', '#00CC33', '#00CC66', '#00CC99', '#00CCCC', '#00CCFF', '#3300CC', '#3300FF', '#3333CC', '#3333FF', '#3366CC', '#3366FF', '#3399CC', '#3399FF', '#33CC00', '#33CC33', '#33CC66', '#33CC99', '#33CCCC', '#33CCFF', '#6600CC', '#6600FF', '#6633CC', '#6633FF', '#66CC00', '#66CC33', '#9900CC', '#9900FF', '#9933CC', '#9933FF', '#99CC00', '#99CC33', '#CC0000', '#CC0033', '#CC0066', '#CC0099', '#CC00CC', '#CC00FF', '#CC3300', '#CC3333', '#CC3366', '#CC3399', '#CC33CC', '#CC33FF', '#CC6600', '#CC6633', '#CC9900', '#CC9933', '#CCCC00', '#CCCC33', '#FF0000', '#FF0033', '#FF0066', '#FF0099', '#FF00CC', '#FF00FF', '#FF3300', '#FF3333', '#FF3366', '#FF3399', '#FF33CC', '#FF33FF', '#FF6600', '#FF6633', '#FF9900', '#FF9933', '#FFCC00', '#FFCC33'];
+          function useColors() {
+            if (typeof window !== 'undefined' && window.process && (window.process.type === 'renderer' || window.process.__nwjs)) {
+              return true;
+            }
+            if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/)) {
+              return false;
+            }
+            return typeof document !== 'undefined' && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance || typeof window !== 'undefined' && window.console && (window.console.firebug || window.console.exception && window.console.table) || typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31 || typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/);
+          }
+          function formatArgs(args) {
+            args[0] = (this.useColors ? '%c' : '') + this.namespace + (this.useColors ? ' %c' : ' ') + args[0] + (this.useColors ? '%c ' : ' ') + '+' + module.exports.humanize(this.diff);
+            if (!this.useColors) {
+              return;
+            }
+            const c = 'color: ' + this.color;
+            args.splice(1, 0, c, 'color: inherit');
+            let index = 0;
+            let lastC = 0;
+            args[0].replace(/%[a-zA-Z%]/g, match => {
+              if (match === '%%') {
+                return;
+              }
+              index++;
+              if (match === '%c') {
+                lastC = index;
+              }
+            });
+            args.splice(lastC, 0, c);
+          }
+          exports.log = console.debug || console.log || (() => {});
+          function save(namespaces) {
+            try {
+              if (namespaces) {
+                exports.storage.setItem('debug', namespaces);
+              } else {
+                exports.storage.removeItem('debug');
+              }
+            } catch (error) {}
+          }
+          function load() {
+            let r;
+            try {
+              r = exports.storage.getItem('debug');
+            } catch (error) {}
+            if (!r && typeof process !== 'undefined' && 'env' in process) {
+              r = process.env.DEBUG;
+            }
+            return r;
+          }
+          function localstorage() {
+            try {
+              return localStorage;
+            } catch (error) {}
+          }
+          module.exports = require('./common')(exports);
+          const {
+            formatters
+          } = module.exports;
+          formatters.j = function (v) {
+            try {
+              return JSON.stringify(v);
+            } catch (error) {
+              return '[UnexpectedJSONParseError]: ' + error.message;
+            }
+          };
+        }).call(this);
+      }).call(this, require('_process'));
+    }, {
+      "./common": 21,
+      "_process": 74
+    }],
+    21: [function (require, module, exports) {
+      function setup(env) {
+        createDebug.debug = createDebug;
+        createDebug.default = createDebug;
+        createDebug.coerce = coerce;
+        createDebug.disable = disable;
+        createDebug.enable = enable;
+        createDebug.enabled = enabled;
+        createDebug.humanize = require('ms');
+        createDebug.destroy = destroy;
+        Object.keys(env).forEach(key => {
+          createDebug[key] = env[key];
+        });
+        createDebug.names = [];
+        createDebug.skips = [];
+        createDebug.formatters = {};
+        function selectColor(namespace) {
+          let hash = 0;
+          for (let i = 0; i < namespace.length; i++) {
+            hash = (hash << 5) - hash + namespace.charCodeAt(i);
+            hash |= 0;
+          }
+          return createDebug.colors[Math.abs(hash) % createDebug.colors.length];
+        }
+        createDebug.selectColor = selectColor;
+        function createDebug(namespace) {
+          let prevTime;
+          let enableOverride = null;
+          let namespacesCache;
+          let enabledCache;
+          function debug(...args) {
+            if (!debug.enabled) {
+              return;
+            }
+            const self = debug;
+            const curr = Number(new Date());
+            const ms = curr - (prevTime || curr);
+            self.diff = ms;
+            self.prev = prevTime;
+            self.curr = curr;
+            prevTime = curr;
+            args[0] = createDebug.coerce(args[0]);
+            if (typeof args[0] !== 'string') {
+              args.unshift('%O');
+            }
+            let index = 0;
+            args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
+              if (match === '%%') {
+                return '%';
+              }
+              index++;
+              const formatter = createDebug.formatters[format];
+              if (typeof formatter === 'function') {
+                const val = args[index];
+                match = formatter.call(self, val);
+                args.splice(index, 1);
+                index--;
+              }
+              return match;
+            });
+            createDebug.formatArgs.call(self, args);
+            const logFn = self.log || createDebug.log;
+            logFn.apply(self, args);
+          }
+          debug.namespace = namespace;
+          debug.useColors = createDebug.useColors();
+          debug.color = createDebug.selectColor(namespace);
+          debug.extend = extend;
+          debug.destroy = createDebug.destroy;
+          Object.defineProperty(debug, 'enabled', {
+            enumerable: true,
+            configurable: false,
+            get: () => {
+              if (enableOverride !== null) {
+                return enableOverride;
+              }
+              if (namespacesCache !== createDebug.namespaces) {
+                namespacesCache = createDebug.namespaces;
+                enabledCache = createDebug.enabled(namespace);
+              }
+              return enabledCache;
+            },
+            set: v => {
+              enableOverride = v;
+            }
+          });
+          if (typeof createDebug.init === 'function') {
+            createDebug.init(debug);
+          }
+          return debug;
+        }
+        function extend(namespace, delimiter) {
+          const newDebug = createDebug(this.namespace + (typeof delimiter === 'undefined' ? ':' : delimiter) + namespace);
+          newDebug.log = this.log;
+          return newDebug;
+        }
+        function enable(namespaces) {
+          createDebug.save(namespaces);
+          createDebug.namespaces = namespaces;
+          createDebug.names = [];
+          createDebug.skips = [];
+          let i;
+          const split = (typeof namespaces === 'string' ? namespaces : '').split(/[\s,]+/);
+          const len = split.length;
+          for (i = 0; i < len; i++) {
+            if (!split[i]) {
+              continue;
+            }
+            namespaces = split[i].replace(/\*/g, '.*?');
+            if (namespaces[0] === '-') {
+              createDebug.skips.push(new RegExp('^' + namespaces.slice(1) + '$'));
+            } else {
+              createDebug.names.push(new RegExp('^' + namespaces + '$'));
+            }
+          }
+        }
+        function disable() {
+          const namespaces = [...createDebug.names.map(toNamespace), ...createDebug.skips.map(toNamespace).map(namespace => '-' + namespace)].join(',');
+          createDebug.enable('');
+          return namespaces;
+        }
+        function enabled(name) {
+          if (name[name.length - 1] === '*') {
+            return true;
+          }
+          let i;
+          let len;
+          for (i = 0, len = createDebug.skips.length; i < len; i++) {
+            if (createDebug.skips[i].test(name)) {
+              return false;
+            }
+          }
+          for (i = 0, len = createDebug.names.length; i < len; i++) {
+            if (createDebug.names[i].test(name)) {
+              return true;
+            }
+          }
+          return false;
+        }
+        function toNamespace(regexp) {
+          return regexp.toString().substring(2, regexp.toString().length - 2).replace(/\.\*\?$/, '*');
+        }
+        function coerce(val) {
+          if (val instanceof Error) {
+            return val.stack || val.message;
+          }
+          return val;
+        }
+        function destroy() {
+          console.warn('Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.');
+        }
+        createDebug.enable(createDebug.load());
+        return createDebug;
+      }
+      module.exports = setup;
+    }, {
+      "ms": 23
+    }],
+    22: [function (require, module, exports) {
+      'use strict';
+
+      const Yallist = require('yallist');
+      const MAX = Symbol('max');
+      const LENGTH = Symbol('length');
+      const LENGTH_CALCULATOR = Symbol('lengthCalculator');
+      const ALLOW_STALE = Symbol('allowStale');
+      const MAX_AGE = Symbol('maxAge');
+      const DISPOSE = Symbol('dispose');
+      const NO_DISPOSE_ON_SET = Symbol('noDisposeOnSet');
+      const LRU_LIST = Symbol('lruList');
+      const CACHE = Symbol('cache');
+      const UPDATE_AGE_ON_GET = Symbol('updateAgeOnGet');
+      const naiveLength = () => 1;
+      class LRUCache {
+        constructor(options) {
+          if (typeof options === 'number') options = {
+            max: options
+          };
+          if (!options) options = {};
+          if (options.max && (typeof options.max !== 'number' || options.max < 0)) throw new TypeError('max must be a non-negative number');
+          const max = this[MAX] = options.max || Infinity;
+          const lc = options.length || naiveLength;
+          this[LENGTH_CALCULATOR] = typeof lc !== 'function' ? naiveLength : lc;
+          this[ALLOW_STALE] = options.stale || false;
+          if (options.maxAge && typeof options.maxAge !== 'number') throw new TypeError('maxAge must be a number');
+          this[MAX_AGE] = options.maxAge || 0;
+          this[DISPOSE] = options.dispose;
+          this[NO_DISPOSE_ON_SET] = options.noDisposeOnSet || false;
+          this[UPDATE_AGE_ON_GET] = options.updateAgeOnGet || false;
+          this.reset();
+        }
+        set max(mL) {
+          if (typeof mL !== 'number' || mL < 0) throw new TypeError('max must be a non-negative number');
+          this[MAX] = mL || Infinity;
+          trim(this);
+        }
+        get max() {
+          return this[MAX];
+        }
+        set allowStale(allowStale) {
+          this[ALLOW_STALE] = !!allowStale;
+        }
+        get allowStale() {
+          return this[ALLOW_STALE];
+        }
+        set maxAge(mA) {
+          if (typeof mA !== 'number') throw new TypeError('maxAge must be a non-negative number');
+          this[MAX_AGE] = mA;
+          trim(this);
+        }
+        get maxAge() {
+          return this[MAX_AGE];
+        }
+        set lengthCalculator(lC) {
+          if (typeof lC !== 'function') lC = naiveLength;
+          if (lC !== this[LENGTH_CALCULATOR]) {
+            this[LENGTH_CALCULATOR] = lC;
+            this[LENGTH] = 0;
+            this[LRU_LIST].forEach(hit => {
+              hit.length = this[LENGTH_CALCULATOR](hit.value, hit.key);
+              this[LENGTH] += hit.length;
+            });
+          }
+          trim(this);
+        }
+        get lengthCalculator() {
+          return this[LENGTH_CALCULATOR];
+        }
+        get length() {
+          return this[LENGTH];
+        }
+        get itemCount() {
+          return this[LRU_LIST].length;
+        }
+        rforEach(fn, thisp) {
+          thisp = thisp || this;
+          for (let walker = this[LRU_LIST].tail; walker !== null;) {
+            const prev = walker.prev;
+            forEachStep(this, fn, walker, thisp);
+            walker = prev;
+          }
+        }
+        forEach(fn, thisp) {
+          thisp = thisp || this;
+          for (let walker = this[LRU_LIST].head; walker !== null;) {
+            const next = walker.next;
+            forEachStep(this, fn, walker, thisp);
+            walker = next;
+          }
+        }
+        keys() {
+          return this[LRU_LIST].toArray().map(k => k.key);
+        }
+        values() {
+          return this[LRU_LIST].toArray().map(k => k.value);
+        }
+        reset() {
+          if (this[DISPOSE] && this[LRU_LIST] && this[LRU_LIST].length) {
+            this[LRU_LIST].forEach(hit => this[DISPOSE](hit.key, hit.value));
+          }
+          this[CACHE] = new Map();
+          this[LRU_LIST] = new Yallist();
+          this[LENGTH] = 0;
+        }
+        dump() {
+          return this[LRU_LIST].map(hit => isStale(this, hit) ? false : {
+            k: hit.key,
+            v: hit.value,
+            e: hit.now + (hit.maxAge || 0)
+          }).toArray().filter(h => h);
+        }
+        dumpLru() {
+          return this[LRU_LIST];
+        }
+        set(key, value, maxAge) {
+          maxAge = maxAge || this[MAX_AGE];
+          if (maxAge && typeof maxAge !== 'number') throw new TypeError('maxAge must be a number');
+          const now = maxAge ? Date.now() : 0;
+          const len = this[LENGTH_CALCULATOR](value, key);
+          if (this[CACHE].has(key)) {
+            if (len > this[MAX]) {
+              del(this, this[CACHE].get(key));
+              return false;
+            }
+            const node = this[CACHE].get(key);
+            const item = node.value;
+            if (this[DISPOSE]) {
+              if (!this[NO_DISPOSE_ON_SET]) this[DISPOSE](key, item.value);
+            }
+            item.now = now;
+            item.maxAge = maxAge;
+            item.value = value;
+            this[LENGTH] += len - item.length;
+            item.length = len;
+            this.get(key);
+            trim(this);
+            return true;
+          }
+          const hit = new Entry(key, value, len, now, maxAge);
+          if (hit.length > this[MAX]) {
+            if (this[DISPOSE]) this[DISPOSE](key, value);
+            return false;
+          }
+          this[LENGTH] += hit.length;
+          this[LRU_LIST].unshift(hit);
+          this[CACHE].set(key, this[LRU_LIST].head);
+          trim(this);
+          return true;
+        }
+        has(key) {
+          if (!this[CACHE].has(key)) return false;
+          const hit = this[CACHE].get(key).value;
+          return !isStale(this, hit);
+        }
+        get(key) {
+          return get(this, key, true);
+        }
+        peek(key) {
+          return get(this, key, false);
+        }
+        pop() {
+          const node = this[LRU_LIST].tail;
+          if (!node) return null;
+          del(this, node);
+          return node.value;
+        }
+        del(key) {
+          del(this, this[CACHE].get(key));
+        }
+        load(arr) {
+          this.reset();
+          const now = Date.now();
+          for (let l = arr.length - 1; l >= 0; l--) {
+            const hit = arr[l];
+            const expiresAt = hit.e || 0;
+            if (expiresAt === 0) this.set(hit.k, hit.v);else {
+              const maxAge = expiresAt - now;
+              if (maxAge > 0) {
+                this.set(hit.k, hit.v, maxAge);
+              }
+            }
+          }
+        }
+        prune() {
+          this[CACHE].forEach((value, key) => get(this, key, false));
+        }
+      }
+      const get = (self, key, doUse) => {
+        const node = self[CACHE].get(key);
+        if (node) {
+          const hit = node.value;
+          if (isStale(self, hit)) {
+            del(self, node);
+            if (!self[ALLOW_STALE]) return undefined;
+          } else {
+            if (doUse) {
+              if (self[UPDATE_AGE_ON_GET]) node.value.now = Date.now();
+              self[LRU_LIST].unshiftNode(node);
+            }
+          }
+          return hit.value;
+        }
+      };
+      const isStale = (self, hit) => {
+        if (!hit || !hit.maxAge && !self[MAX_AGE]) return false;
+        const diff = Date.now() - hit.now;
+        return hit.maxAge ? diff > hit.maxAge : self[MAX_AGE] && diff > self[MAX_AGE];
+      };
+      const trim = self => {
+        if (self[LENGTH] > self[MAX]) {
+          for (let walker = self[LRU_LIST].tail; self[LENGTH] > self[MAX] && walker !== null;) {
+            const prev = walker.prev;
+            del(self, walker);
+            walker = prev;
+          }
+        }
+      };
+      const del = (self, node) => {
+        if (node) {
+          const hit = node.value;
+          if (self[DISPOSE]) self[DISPOSE](hit.key, hit.value);
+          self[LENGTH] -= hit.length;
+          self[CACHE].delete(hit.key);
+          self[LRU_LIST].removeNode(node);
+        }
+      };
+      class Entry {
+        constructor(key, value, length, now, maxAge) {
+          this.key = key;
+          this.value = value;
+          this.length = length;
+          this.now = now;
+          this.maxAge = maxAge || 0;
+        }
+      }
+      const forEachStep = (self, fn, node, thisp) => {
+        let hit = node.value;
+        if (isStale(self, hit)) {
+          del(self, node);
+          if (!self[ALLOW_STALE]) hit = undefined;
+        }
+        if (hit) fn.call(thisp, hit.value, hit.key, self);
+      };
+      module.exports = LRUCache;
+    }, {
+      "yallist": 70
+    }],
+    23: [function (require, module, exports) {
+      var s = 1000;
+      var m = s * 60;
+      var h = m * 60;
+      var d = h * 24;
+      var w = d * 7;
+      var y = d * 365.25;
+      module.exports = function (val, options) {
+        options = options || {};
+        var type = typeof val;
+        if (type === 'string' && val.length > 0) {
+          return parse(val);
+        } else if (type === 'number' && isFinite(val)) {
+          return options.long ? fmtLong(val) : fmtShort(val);
+        }
+        throw new Error('val is not a non-empty string or a valid number. val=' + JSON.stringify(val));
+      };
+      function parse(str) {
+        str = String(str);
+        if (str.length > 100) {
+          return;
+        }
+        var match = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(str);
+        if (!match) {
+          return;
+        }
+        var n = parseFloat(match[1]);
+        var type = (match[2] || 'ms').toLowerCase();
+        switch (type) {
+          case 'years':
+          case 'year':
+          case 'yrs':
+          case 'yr':
+          case 'y':
+            return n * y;
+          case 'weeks':
+          case 'week':
+          case 'w':
+            return n * w;
+          case 'days':
+          case 'day':
+          case 'd':
+            return n * d;
+          case 'hours':
+          case 'hour':
+          case 'hrs':
+          case 'hr':
+          case 'h':
+            return n * h;
+          case 'minutes':
+          case 'minute':
+          case 'mins':
+          case 'min':
+          case 'm':
+            return n * m;
+          case 'seconds':
+          case 'second':
+          case 'secs':
+          case 'sec':
+          case 's':
+            return n * s;
+          case 'milliseconds':
+          case 'millisecond':
+          case 'msecs':
+          case 'msec':
+          case 'ms':
+            return n;
+          default:
+            return undefined;
+        }
+      }
+      function fmtShort(ms) {
+        var msAbs = Math.abs(ms);
+        if (msAbs >= d) {
+          return Math.round(ms / d) + 'd';
+        }
+        if (msAbs >= h) {
+          return Math.round(ms / h) + 'h';
+        }
+        if (msAbs >= m) {
+          return Math.round(ms / m) + 'm';
+        }
+        if (msAbs >= s) {
+          return Math.round(ms / s) + 's';
+        }
+        return ms + 'ms';
+      }
+      function fmtLong(ms) {
+        var msAbs = Math.abs(ms);
+        if (msAbs >= d) {
+          return plural(ms, msAbs, d, 'day');
+        }
+        if (msAbs >= h) {
+          return plural(ms, msAbs, h, 'hour');
+        }
+        if (msAbs >= m) {
+          return plural(ms, msAbs, m, 'minute');
+        }
+        if (msAbs >= s) {
+          return plural(ms, msAbs, s, 'second');
+        }
+        return ms + ' ms';
+      }
+      function plural(ms, msAbs, n, name) {
+        var isPlural = msAbs >= n * 1.5;
+        return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
+      }
+    }, {}],
+    24: [function (require, module, exports) {
       const ANY = Symbol('SemVer ANY');
       class Comparator {
         static get ANY() {
@@ -1275,14 +1879,14 @@
       const SemVer = require('./semver');
       const Range = require('./range');
     }, {
-      "../functions/cmp": 24,
-      "../internal/debug": 49,
-      "../internal/parse-options": 51,
-      "../internal/re": 52,
-      "./range": 21,
-      "./semver": 22
+      "../functions/cmp": 28,
+      "../internal/debug": 53,
+      "../internal/parse-options": 55,
+      "../internal/re": 56,
+      "./range": 25,
+      "./semver": 26
     }],
-    21: [function (require, module, exports) {
+    25: [function (require, module, exports) {
       class Range {
         constructor(range, options) {
           options = parseOptions(options);
@@ -1639,14 +2243,14 @@
         return true;
       };
     }, {
-      "../internal/debug": 49,
-      "../internal/parse-options": 51,
-      "../internal/re": 52,
-      "./comparator": 20,
-      "./semver": 22,
-      "lru-cache": 67
+      "../internal/debug": 53,
+      "../internal/parse-options": 55,
+      "../internal/re": 56,
+      "./comparator": 24,
+      "./semver": 26,
+      "lru-cache": 22
     }],
-    22: [function (require, module, exports) {
+    26: [function (require, module, exports) {
       const debug = require('../internal/debug');
       const {
         MAX_LENGTH,
@@ -1874,13 +2478,13 @@
       }
       module.exports = SemVer;
     }, {
-      "../internal/constants": 48,
-      "../internal/debug": 49,
-      "../internal/identifiers": 50,
-      "../internal/parse-options": 51,
-      "../internal/re": 52
+      "../internal/constants": 52,
+      "../internal/debug": 53,
+      "../internal/identifiers": 54,
+      "../internal/parse-options": 55,
+      "../internal/re": 56
     }],
-    23: [function (require, module, exports) {
+    27: [function (require, module, exports) {
       const parse = require('./parse');
       const clean = (version, options) => {
         const s = parse(version.trim().replace(/^[=v]+/, ''), options);
@@ -1888,9 +2492,9 @@
       };
       module.exports = clean;
     }, {
-      "./parse": 39
+      "./parse": 43
     }],
-    24: [function (require, module, exports) {
+    28: [function (require, module, exports) {
       const eq = require('./eq');
       const neq = require('./neq');
       const gt = require('./gt');
@@ -1935,14 +2539,14 @@
       };
       module.exports = cmp;
     }, {
-      "./eq": 30,
-      "./gt": 31,
-      "./gte": 32,
-      "./lt": 34,
-      "./lte": 35,
-      "./neq": 38
+      "./eq": 34,
+      "./gt": 35,
+      "./gte": 36,
+      "./lt": 38,
+      "./lte": 39,
+      "./neq": 42
     }],
-    25: [function (require, module, exports) {
+    29: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const parse = require('./parse');
       const {
@@ -1980,11 +2584,11 @@
       };
       module.exports = coerce;
     }, {
-      "../classes/semver": 22,
-      "../internal/re": 52,
-      "./parse": 39
+      "../classes/semver": 26,
+      "../internal/re": 56,
+      "./parse": 43
     }],
-    26: [function (require, module, exports) {
+    30: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const compareBuild = (a, b, loose) => {
         const versionA = new SemVer(a, loose);
@@ -1993,23 +2597,23 @@
       };
       module.exports = compareBuild;
     }, {
-      "../classes/semver": 22
+      "../classes/semver": 26
     }],
-    27: [function (require, module, exports) {
+    31: [function (require, module, exports) {
       const compare = require('./compare');
       const compareLoose = (a, b) => compare(a, b, true);
       module.exports = compareLoose;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    28: [function (require, module, exports) {
+    32: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const compare = (a, b, loose) => new SemVer(a, loose).compare(new SemVer(b, loose));
       module.exports = compare;
     }, {
-      "../classes/semver": 22
+      "../classes/semver": 26
     }],
-    29: [function (require, module, exports) {
+    33: [function (require, module, exports) {
       const parse = require('./parse');
       const eq = require('./eq');
       const diff = (version1, version2) => {
@@ -2033,31 +2637,31 @@
       };
       module.exports = diff;
     }, {
-      "./eq": 30,
-      "./parse": 39
+      "./eq": 34,
+      "./parse": 43
     }],
-    30: [function (require, module, exports) {
+    34: [function (require, module, exports) {
       const compare = require('./compare');
       const eq = (a, b, loose) => compare(a, b, loose) === 0;
       module.exports = eq;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    31: [function (require, module, exports) {
+    35: [function (require, module, exports) {
       const compare = require('./compare');
       const gt = (a, b, loose) => compare(a, b, loose) > 0;
       module.exports = gt;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    32: [function (require, module, exports) {
+    36: [function (require, module, exports) {
       const compare = require('./compare');
       const gte = (a, b, loose) => compare(a, b, loose) >= 0;
       module.exports = gte;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    33: [function (require, module, exports) {
+    37: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const inc = (version, release, options, identifier) => {
         if (typeof options === 'string') {
@@ -2072,44 +2676,44 @@
       };
       module.exports = inc;
     }, {
-      "../classes/semver": 22
+      "../classes/semver": 26
     }],
-    34: [function (require, module, exports) {
+    38: [function (require, module, exports) {
       const compare = require('./compare');
       const lt = (a, b, loose) => compare(a, b, loose) < 0;
       module.exports = lt;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    35: [function (require, module, exports) {
+    39: [function (require, module, exports) {
       const compare = require('./compare');
       const lte = (a, b, loose) => compare(a, b, loose) <= 0;
       module.exports = lte;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    36: [function (require, module, exports) {
+    40: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const major = (a, loose) => new SemVer(a, loose).major;
       module.exports = major;
     }, {
-      "../classes/semver": 22
+      "../classes/semver": 26
     }],
-    37: [function (require, module, exports) {
+    41: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const minor = (a, loose) => new SemVer(a, loose).minor;
       module.exports = minor;
     }, {
-      "../classes/semver": 22
+      "../classes/semver": 26
     }],
-    38: [function (require, module, exports) {
+    42: [function (require, module, exports) {
       const compare = require('./compare');
       const neq = (a, b, loose) => compare(a, b, loose) !== 0;
       module.exports = neq;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    39: [function (require, module, exports) {
+    43: [function (require, module, exports) {
       const {
         MAX_LENGTH
       } = require('../internal/constants');
@@ -2142,19 +2746,19 @@
       };
       module.exports = parse;
     }, {
-      "../classes/semver": 22,
-      "../internal/constants": 48,
-      "../internal/parse-options": 51,
-      "../internal/re": 52
+      "../classes/semver": 26,
+      "../internal/constants": 52,
+      "../internal/parse-options": 55,
+      "../internal/re": 56
     }],
-    40: [function (require, module, exports) {
+    44: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const patch = (a, loose) => new SemVer(a, loose).patch;
       module.exports = patch;
     }, {
-      "../classes/semver": 22
+      "../classes/semver": 26
     }],
-    41: [function (require, module, exports) {
+    45: [function (require, module, exports) {
       const parse = require('./parse');
       const prerelease = (version, options) => {
         const parsed = parse(version, options);
@@ -2162,23 +2766,23 @@
       };
       module.exports = prerelease;
     }, {
-      "./parse": 39
+      "./parse": 43
     }],
-    42: [function (require, module, exports) {
+    46: [function (require, module, exports) {
       const compare = require('./compare');
       const rcompare = (a, b, loose) => compare(b, a, loose);
       module.exports = rcompare;
     }, {
-      "./compare": 28
+      "./compare": 32
     }],
-    43: [function (require, module, exports) {
+    47: [function (require, module, exports) {
       const compareBuild = require('./compare-build');
       const rsort = (list, loose) => list.sort((a, b) => compareBuild(b, a, loose));
       module.exports = rsort;
     }, {
-      "./compare-build": 26
+      "./compare-build": 30
     }],
-    44: [function (require, module, exports) {
+    48: [function (require, module, exports) {
       const Range = require('../classes/range');
       const satisfies = (version, range, options) => {
         try {
@@ -2190,16 +2794,16 @@
       };
       module.exports = satisfies;
     }, {
-      "../classes/range": 21
+      "../classes/range": 25
     }],
-    45: [function (require, module, exports) {
+    49: [function (require, module, exports) {
       const compareBuild = require('./compare-build');
       const sort = (list, loose) => list.sort((a, b) => compareBuild(a, b, loose));
       module.exports = sort;
     }, {
-      "./compare-build": 26
+      "./compare-build": 30
     }],
-    46: [function (require, module, exports) {
+    50: [function (require, module, exports) {
       const parse = require('./parse');
       const valid = (version, options) => {
         const v = parse(version, options);
@@ -2207,9 +2811,9 @@
       };
       module.exports = valid;
     }, {
-      "./parse": 39
+      "./parse": 43
     }],
-    47: [function (require, module, exports) {
+    51: [function (require, module, exports) {
       const internalRe = require('./internal/re');
       const constants = require('./internal/constants');
       const SemVer = require('./classes/semver');
@@ -2298,49 +2902,49 @@
         rcompareIdentifiers: identifiers.rcompareIdentifiers
       };
     }, {
-      "./classes/comparator": 20,
-      "./classes/range": 21,
-      "./classes/semver": 22,
-      "./functions/clean": 23,
-      "./functions/cmp": 24,
-      "./functions/coerce": 25,
-      "./functions/compare": 28,
-      "./functions/compare-build": 26,
-      "./functions/compare-loose": 27,
-      "./functions/diff": 29,
-      "./functions/eq": 30,
-      "./functions/gt": 31,
-      "./functions/gte": 32,
-      "./functions/inc": 33,
-      "./functions/lt": 34,
-      "./functions/lte": 35,
-      "./functions/major": 36,
-      "./functions/minor": 37,
-      "./functions/neq": 38,
-      "./functions/parse": 39,
-      "./functions/patch": 40,
-      "./functions/prerelease": 41,
-      "./functions/rcompare": 42,
-      "./functions/rsort": 43,
-      "./functions/satisfies": 44,
-      "./functions/sort": 45,
-      "./functions/valid": 46,
-      "./internal/constants": 48,
-      "./internal/identifiers": 50,
-      "./internal/re": 52,
-      "./ranges/gtr": 53,
-      "./ranges/intersects": 54,
-      "./ranges/ltr": 55,
-      "./ranges/max-satisfying": 56,
-      "./ranges/min-satisfying": 57,
-      "./ranges/min-version": 58,
-      "./ranges/outside": 59,
-      "./ranges/simplify": 60,
-      "./ranges/subset": 61,
-      "./ranges/to-comparators": 62,
-      "./ranges/valid": 63
+      "./classes/comparator": 24,
+      "./classes/range": 25,
+      "./classes/semver": 26,
+      "./functions/clean": 27,
+      "./functions/cmp": 28,
+      "./functions/coerce": 29,
+      "./functions/compare": 32,
+      "./functions/compare-build": 30,
+      "./functions/compare-loose": 31,
+      "./functions/diff": 33,
+      "./functions/eq": 34,
+      "./functions/gt": 35,
+      "./functions/gte": 36,
+      "./functions/inc": 37,
+      "./functions/lt": 38,
+      "./functions/lte": 39,
+      "./functions/major": 40,
+      "./functions/minor": 41,
+      "./functions/neq": 42,
+      "./functions/parse": 43,
+      "./functions/patch": 44,
+      "./functions/prerelease": 45,
+      "./functions/rcompare": 46,
+      "./functions/rsort": 47,
+      "./functions/satisfies": 48,
+      "./functions/sort": 49,
+      "./functions/valid": 50,
+      "./internal/constants": 52,
+      "./internal/identifiers": 54,
+      "./internal/re": 56,
+      "./ranges/gtr": 57,
+      "./ranges/intersects": 58,
+      "./ranges/ltr": 59,
+      "./ranges/max-satisfying": 60,
+      "./ranges/min-satisfying": 61,
+      "./ranges/min-version": 62,
+      "./ranges/outside": 63,
+      "./ranges/simplify": 64,
+      "./ranges/subset": 65,
+      "./ranges/to-comparators": 66,
+      "./ranges/valid": 67
     }],
-    48: [function (require, module, exports) {
+    52: [function (require, module, exports) {
       const SEMVER_SPEC_VERSION = '2.0.0';
       const MAX_LENGTH = 256;
       const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER || 9007199254740991;
@@ -2352,7 +2956,7 @@
         MAX_SAFE_COMPONENT_LENGTH
       };
     }, {}],
-    49: [function (require, module, exports) {
+    53: [function (require, module, exports) {
       (function (process) {
         (function () {
           const debug = typeof process === 'object' && process.env && process.env.NODE_DEBUG && /\bsemver\b/i.test(process.env.NODE_DEBUG) ? (...args) => console.error('SEMVER', ...args) : () => {};
@@ -2362,7 +2966,7 @@
     }, {
       "_process": 74
     }],
-    50: [function (require, module, exports) {
+    54: [function (require, module, exports) {
       const numeric = /^[0-9]+$/;
       const compareIdentifiers = (a, b) => {
         const anum = numeric.test(a);
@@ -2379,7 +2983,7 @@
         rcompareIdentifiers
       };
     }, {}],
-    51: [function (require, module, exports) {
+    55: [function (require, module, exports) {
       const opts = ['includePrerelease', 'loose', 'rtl'];
       const parseOptions = options => !options ? {} : typeof options !== 'object' ? {
         loose: true
@@ -2389,7 +2993,7 @@
       }, {});
       module.exports = parseOptions;
     }, {}],
-    52: [function (require, module, exports) {
+    56: [function (require, module, exports) {
       const {
         MAX_SAFE_COMPONENT_LENGTH
       } = require('./constants');
@@ -2450,17 +3054,17 @@
       createToken('GTE0', '^\\s*>=\\s*0\\.0\\.0\\s*$');
       createToken('GTE0PRE', '^\\s*>=\\s*0\\.0\\.0-0\\s*$');
     }, {
-      "./constants": 48,
-      "./debug": 49
+      "./constants": 52,
+      "./debug": 53
     }],
-    53: [function (require, module, exports) {
+    57: [function (require, module, exports) {
       const outside = require('./outside');
       const gtr = (version, range, options) => outside(version, range, '>', options);
       module.exports = gtr;
     }, {
-      "./outside": 59
+      "./outside": 63
     }],
-    54: [function (require, module, exports) {
+    58: [function (require, module, exports) {
       const Range = require('../classes/range');
       const intersects = (r1, r2, options) => {
         r1 = new Range(r1, options);
@@ -2469,16 +3073,16 @@
       };
       module.exports = intersects;
     }, {
-      "../classes/range": 21
+      "../classes/range": 25
     }],
-    55: [function (require, module, exports) {
+    59: [function (require, module, exports) {
       const outside = require('./outside');
       const ltr = (version, range, options) => outside(version, range, '<', options);
       module.exports = ltr;
     }, {
-      "./outside": 59
+      "./outside": 63
     }],
-    56: [function (require, module, exports) {
+    60: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const Range = require('../classes/range');
       const maxSatisfying = (versions, range, options) => {
@@ -2502,10 +3106,10 @@
       };
       module.exports = maxSatisfying;
     }, {
-      "../classes/range": 21,
-      "../classes/semver": 22
+      "../classes/range": 25,
+      "../classes/semver": 26
     }],
-    57: [function (require, module, exports) {
+    61: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const Range = require('../classes/range');
       const minSatisfying = (versions, range, options) => {
@@ -2529,10 +3133,10 @@
       };
       module.exports = minSatisfying;
     }, {
-      "../classes/range": 21,
-      "../classes/semver": 22
+      "../classes/range": 25,
+      "../classes/semver": 26
     }],
-    58: [function (require, module, exports) {
+    62: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const Range = require('../classes/range');
       const gt = require('../functions/gt');
@@ -2584,11 +3188,11 @@
       };
       module.exports = minVersion;
     }, {
-      "../classes/range": 21,
-      "../classes/semver": 22,
-      "../functions/gt": 31
+      "../classes/range": 25,
+      "../classes/semver": 26,
+      "../functions/gt": 35
     }],
-    59: [function (require, module, exports) {
+    63: [function (require, module, exports) {
       const SemVer = require('../classes/semver');
       const Comparator = require('../classes/comparator');
       const {
@@ -2654,16 +3258,16 @@
       };
       module.exports = outside;
     }, {
-      "../classes/comparator": 20,
-      "../classes/range": 21,
-      "../classes/semver": 22,
-      "../functions/gt": 31,
-      "../functions/gte": 32,
-      "../functions/lt": 34,
-      "../functions/lte": 35,
-      "../functions/satisfies": 44
+      "../classes/comparator": 24,
+      "../classes/range": 25,
+      "../classes/semver": 26,
+      "../functions/gt": 35,
+      "../functions/gte": 36,
+      "../functions/lt": 38,
+      "../functions/lte": 39,
+      "../functions/satisfies": 48
     }],
-    60: [function (require, module, exports) {
+    64: [function (require, module, exports) {
       const satisfies = require('../functions/satisfies.js');
       const compare = require('../functions/compare.js');
       module.exports = (versions, range, options) => {
@@ -2708,10 +3312,10 @@
         return simplified.length < original.length ? simplified : range;
       };
     }, {
-      "../functions/compare.js": 28,
-      "../functions/satisfies.js": 44
+      "../functions/compare.js": 32,
+      "../functions/satisfies.js": 48
     }],
-    61: [function (require, module, exports) {
+    65: [function (require, module, exports) {
       const Range = require('../classes/range.js');
       const Comparator = require('../classes/comparator.js');
       const {
@@ -2868,19 +3472,19 @@
       };
       module.exports = subset;
     }, {
-      "../classes/comparator.js": 20,
-      "../classes/range.js": 21,
-      "../functions/compare.js": 28,
-      "../functions/satisfies.js": 44
+      "../classes/comparator.js": 24,
+      "../classes/range.js": 25,
+      "../functions/compare.js": 32,
+      "../functions/satisfies.js": 48
     }],
-    62: [function (require, module, exports) {
+    66: [function (require, module, exports) {
       const Range = require('../classes/range');
       const toComparators = (range, options) => new Range(range, options).set.map(comp => comp.map(c => c.value).join(' ').trim().split(' '));
       module.exports = toComparators;
     }, {
-      "../classes/range": 21
+      "../classes/range": 25
     }],
-    63: [function (require, module, exports) {
+    67: [function (require, module, exports) {
       const Range = require('../classes/range');
       const validRange = (range, options) => {
         try {
@@ -2891,611 +3495,7 @@
       };
       module.exports = validRange;
     }, {
-      "../classes/range": 21
-    }],
-    64: [function (require, module, exports) {
-      var s = 1000;
-      var m = s * 60;
-      var h = m * 60;
-      var d = h * 24;
-      var w = d * 7;
-      var y = d * 365.25;
-      module.exports = function (val, options) {
-        options = options || {};
-        var type = typeof val;
-        if (type === 'string' && val.length > 0) {
-          return parse(val);
-        } else if (type === 'number' && isFinite(val)) {
-          return options.long ? fmtLong(val) : fmtShort(val);
-        }
-        throw new Error('val is not a non-empty string or a valid number. val=' + JSON.stringify(val));
-      };
-      function parse(str) {
-        str = String(str);
-        if (str.length > 100) {
-          return;
-        }
-        var match = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(str);
-        if (!match) {
-          return;
-        }
-        var n = parseFloat(match[1]);
-        var type = (match[2] || 'ms').toLowerCase();
-        switch (type) {
-          case 'years':
-          case 'year':
-          case 'yrs':
-          case 'yr':
-          case 'y':
-            return n * y;
-          case 'weeks':
-          case 'week':
-          case 'w':
-            return n * w;
-          case 'days':
-          case 'day':
-          case 'd':
-            return n * d;
-          case 'hours':
-          case 'hour':
-          case 'hrs':
-          case 'hr':
-          case 'h':
-            return n * h;
-          case 'minutes':
-          case 'minute':
-          case 'mins':
-          case 'min':
-          case 'm':
-            return n * m;
-          case 'seconds':
-          case 'second':
-          case 'secs':
-          case 'sec':
-          case 's':
-            return n * s;
-          case 'milliseconds':
-          case 'millisecond':
-          case 'msecs':
-          case 'msec':
-          case 'ms':
-            return n;
-          default:
-            return undefined;
-        }
-      }
-      function fmtShort(ms) {
-        var msAbs = Math.abs(ms);
-        if (msAbs >= d) {
-          return Math.round(ms / d) + 'd';
-        }
-        if (msAbs >= h) {
-          return Math.round(ms / h) + 'h';
-        }
-        if (msAbs >= m) {
-          return Math.round(ms / m) + 'm';
-        }
-        if (msAbs >= s) {
-          return Math.round(ms / s) + 's';
-        }
-        return ms + 'ms';
-      }
-      function fmtLong(ms) {
-        var msAbs = Math.abs(ms);
-        if (msAbs >= d) {
-          return plural(ms, msAbs, d, 'day');
-        }
-        if (msAbs >= h) {
-          return plural(ms, msAbs, h, 'hour');
-        }
-        if (msAbs >= m) {
-          return plural(ms, msAbs, m, 'minute');
-        }
-        if (msAbs >= s) {
-          return plural(ms, msAbs, s, 'second');
-        }
-        return ms + ' ms';
-      }
-      function plural(ms, msAbs, n, name) {
-        var isPlural = msAbs >= n * 1.5;
-        return Math.round(ms / n) + ' ' + name + (isPlural ? 's' : '');
-      }
-    }, {}],
-    65: [function (require, module, exports) {
-      (function (process) {
-        (function () {
-          exports.formatArgs = formatArgs;
-          exports.save = save;
-          exports.load = load;
-          exports.useColors = useColors;
-          exports.storage = localstorage();
-          exports.destroy = (() => {
-            let warned = false;
-            return () => {
-              if (!warned) {
-                warned = true;
-                console.warn('Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.');
-              }
-            };
-          })();
-          exports.colors = ['#0000CC', '#0000FF', '#0033CC', '#0033FF', '#0066CC', '#0066FF', '#0099CC', '#0099FF', '#00CC00', '#00CC33', '#00CC66', '#00CC99', '#00CCCC', '#00CCFF', '#3300CC', '#3300FF', '#3333CC', '#3333FF', '#3366CC', '#3366FF', '#3399CC', '#3399FF', '#33CC00', '#33CC33', '#33CC66', '#33CC99', '#33CCCC', '#33CCFF', '#6600CC', '#6600FF', '#6633CC', '#6633FF', '#66CC00', '#66CC33', '#9900CC', '#9900FF', '#9933CC', '#9933FF', '#99CC00', '#99CC33', '#CC0000', '#CC0033', '#CC0066', '#CC0099', '#CC00CC', '#CC00FF', '#CC3300', '#CC3333', '#CC3366', '#CC3399', '#CC33CC', '#CC33FF', '#CC6600', '#CC6633', '#CC9900', '#CC9933', '#CCCC00', '#CCCC33', '#FF0000', '#FF0033', '#FF0066', '#FF0099', '#FF00CC', '#FF00FF', '#FF3300', '#FF3333', '#FF3366', '#FF3399', '#FF33CC', '#FF33FF', '#FF6600', '#FF6633', '#FF9900', '#FF9933', '#FFCC00', '#FFCC33'];
-          function useColors() {
-            if (typeof window !== 'undefined' && window.process && (window.process.type === 'renderer' || window.process.__nwjs)) {
-              return true;
-            }
-            if (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/)) {
-              return false;
-            }
-            return typeof document !== 'undefined' && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance || typeof window !== 'undefined' && window.console && (window.console.firebug || window.console.exception && window.console.table) || typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/) && parseInt(RegExp.$1, 10) >= 31 || typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/);
-          }
-          function formatArgs(args) {
-            args[0] = (this.useColors ? '%c' : '') + this.namespace + (this.useColors ? ' %c' : ' ') + args[0] + (this.useColors ? '%c ' : ' ') + '+' + module.exports.humanize(this.diff);
-            if (!this.useColors) {
-              return;
-            }
-            const c = 'color: ' + this.color;
-            args.splice(1, 0, c, 'color: inherit');
-            let index = 0;
-            let lastC = 0;
-            args[0].replace(/%[a-zA-Z%]/g, match => {
-              if (match === '%%') {
-                return;
-              }
-              index++;
-              if (match === '%c') {
-                lastC = index;
-              }
-            });
-            args.splice(lastC, 0, c);
-          }
-          exports.log = console.debug || console.log || (() => {});
-          function save(namespaces) {
-            try {
-              if (namespaces) {
-                exports.storage.setItem('debug', namespaces);
-              } else {
-                exports.storage.removeItem('debug');
-              }
-            } catch (error) {}
-          }
-          function load() {
-            let r;
-            try {
-              r = exports.storage.getItem('debug');
-            } catch (error) {}
-            if (!r && typeof process !== 'undefined' && 'env' in process) {
-              r = process.env.DEBUG;
-            }
-            return r;
-          }
-          function localstorage() {
-            try {
-              return localStorage;
-            } catch (error) {}
-          }
-          module.exports = require('./common')(exports);
-          const {
-            formatters
-          } = module.exports;
-          formatters.j = function (v) {
-            try {
-              return JSON.stringify(v);
-            } catch (error) {
-              return '[UnexpectedJSONParseError]: ' + error.message;
-            }
-          };
-        }).call(this);
-      }).call(this, require('_process'));
-    }, {
-      "./common": 66,
-      "_process": 74
-    }],
-    66: [function (require, module, exports) {
-      function setup(env) {
-        createDebug.debug = createDebug;
-        createDebug.default = createDebug;
-        createDebug.coerce = coerce;
-        createDebug.disable = disable;
-        createDebug.enable = enable;
-        createDebug.enabled = enabled;
-        createDebug.humanize = require('ms');
-        createDebug.destroy = destroy;
-        Object.keys(env).forEach(key => {
-          createDebug[key] = env[key];
-        });
-        createDebug.names = [];
-        createDebug.skips = [];
-        createDebug.formatters = {};
-        function selectColor(namespace) {
-          let hash = 0;
-          for (let i = 0; i < namespace.length; i++) {
-            hash = (hash << 5) - hash + namespace.charCodeAt(i);
-            hash |= 0;
-          }
-          return createDebug.colors[Math.abs(hash) % createDebug.colors.length];
-        }
-        createDebug.selectColor = selectColor;
-        function createDebug(namespace) {
-          let prevTime;
-          let enableOverride = null;
-          let namespacesCache;
-          let enabledCache;
-          function debug(...args) {
-            if (!debug.enabled) {
-              return;
-            }
-            const self = debug;
-            const curr = Number(new Date());
-            const ms = curr - (prevTime || curr);
-            self.diff = ms;
-            self.prev = prevTime;
-            self.curr = curr;
-            prevTime = curr;
-            args[0] = createDebug.coerce(args[0]);
-            if (typeof args[0] !== 'string') {
-              args.unshift('%O');
-            }
-            let index = 0;
-            args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
-              if (match === '%%') {
-                return '%';
-              }
-              index++;
-              const formatter = createDebug.formatters[format];
-              if (typeof formatter === 'function') {
-                const val = args[index];
-                match = formatter.call(self, val);
-                args.splice(index, 1);
-                index--;
-              }
-              return match;
-            });
-            createDebug.formatArgs.call(self, args);
-            const logFn = self.log || createDebug.log;
-            logFn.apply(self, args);
-          }
-          debug.namespace = namespace;
-          debug.useColors = createDebug.useColors();
-          debug.color = createDebug.selectColor(namespace);
-          debug.extend = extend;
-          debug.destroy = createDebug.destroy;
-          Object.defineProperty(debug, 'enabled', {
-            enumerable: true,
-            configurable: false,
-            get: () => {
-              if (enableOverride !== null) {
-                return enableOverride;
-              }
-              if (namespacesCache !== createDebug.namespaces) {
-                namespacesCache = createDebug.namespaces;
-                enabledCache = createDebug.enabled(namespace);
-              }
-              return enabledCache;
-            },
-            set: v => {
-              enableOverride = v;
-            }
-          });
-          if (typeof createDebug.init === 'function') {
-            createDebug.init(debug);
-          }
-          return debug;
-        }
-        function extend(namespace, delimiter) {
-          const newDebug = createDebug(this.namespace + (typeof delimiter === 'undefined' ? ':' : delimiter) + namespace);
-          newDebug.log = this.log;
-          return newDebug;
-        }
-        function enable(namespaces) {
-          createDebug.save(namespaces);
-          createDebug.namespaces = namespaces;
-          createDebug.names = [];
-          createDebug.skips = [];
-          let i;
-          const split = (typeof namespaces === 'string' ? namespaces : '').split(/[\s,]+/);
-          const len = split.length;
-          for (i = 0; i < len; i++) {
-            if (!split[i]) {
-              continue;
-            }
-            namespaces = split[i].replace(/\*/g, '.*?');
-            if (namespaces[0] === '-') {
-              createDebug.skips.push(new RegExp('^' + namespaces.slice(1) + '$'));
-            } else {
-              createDebug.names.push(new RegExp('^' + namespaces + '$'));
-            }
-          }
-        }
-        function disable() {
-          const namespaces = [...createDebug.names.map(toNamespace), ...createDebug.skips.map(toNamespace).map(namespace => '-' + namespace)].join(',');
-          createDebug.enable('');
-          return namespaces;
-        }
-        function enabled(name) {
-          if (name[name.length - 1] === '*') {
-            return true;
-          }
-          let i;
-          let len;
-          for (i = 0, len = createDebug.skips.length; i < len; i++) {
-            if (createDebug.skips[i].test(name)) {
-              return false;
-            }
-          }
-          for (i = 0, len = createDebug.names.length; i < len; i++) {
-            if (createDebug.names[i].test(name)) {
-              return true;
-            }
-          }
-          return false;
-        }
-        function toNamespace(regexp) {
-          return regexp.toString().substring(2, regexp.toString().length - 2).replace(/\.\*\?$/, '*');
-        }
-        function coerce(val) {
-          if (val instanceof Error) {
-            return val.stack || val.message;
-          }
-          return val;
-        }
-        function destroy() {
-          console.warn('Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.');
-        }
-        createDebug.enable(createDebug.load());
-        return createDebug;
-      }
-      module.exports = setup;
-    }, {
-      "ms": 64
-    }],
-    67: [function (require, module, exports) {
-      'use strict';
-
-      const Yallist = require('yallist');
-      const MAX = Symbol('max');
-      const LENGTH = Symbol('length');
-      const LENGTH_CALCULATOR = Symbol('lengthCalculator');
-      const ALLOW_STALE = Symbol('allowStale');
-      const MAX_AGE = Symbol('maxAge');
-      const DISPOSE = Symbol('dispose');
-      const NO_DISPOSE_ON_SET = Symbol('noDisposeOnSet');
-      const LRU_LIST = Symbol('lruList');
-      const CACHE = Symbol('cache');
-      const UPDATE_AGE_ON_GET = Symbol('updateAgeOnGet');
-      const naiveLength = () => 1;
-      class LRUCache {
-        constructor(options) {
-          if (typeof options === 'number') options = {
-            max: options
-          };
-          if (!options) options = {};
-          if (options.max && (typeof options.max !== 'number' || options.max < 0)) throw new TypeError('max must be a non-negative number');
-          const max = this[MAX] = options.max || Infinity;
-          const lc = options.length || naiveLength;
-          this[LENGTH_CALCULATOR] = typeof lc !== 'function' ? naiveLength : lc;
-          this[ALLOW_STALE] = options.stale || false;
-          if (options.maxAge && typeof options.maxAge !== 'number') throw new TypeError('maxAge must be a number');
-          this[MAX_AGE] = options.maxAge || 0;
-          this[DISPOSE] = options.dispose;
-          this[NO_DISPOSE_ON_SET] = options.noDisposeOnSet || false;
-          this[UPDATE_AGE_ON_GET] = options.updateAgeOnGet || false;
-          this.reset();
-        }
-        set max(mL) {
-          if (typeof mL !== 'number' || mL < 0) throw new TypeError('max must be a non-negative number');
-          this[MAX] = mL || Infinity;
-          trim(this);
-        }
-        get max() {
-          return this[MAX];
-        }
-        set allowStale(allowStale) {
-          this[ALLOW_STALE] = !!allowStale;
-        }
-        get allowStale() {
-          return this[ALLOW_STALE];
-        }
-        set maxAge(mA) {
-          if (typeof mA !== 'number') throw new TypeError('maxAge must be a non-negative number');
-          this[MAX_AGE] = mA;
-          trim(this);
-        }
-        get maxAge() {
-          return this[MAX_AGE];
-        }
-        set lengthCalculator(lC) {
-          if (typeof lC !== 'function') lC = naiveLength;
-          if (lC !== this[LENGTH_CALCULATOR]) {
-            this[LENGTH_CALCULATOR] = lC;
-            this[LENGTH] = 0;
-            this[LRU_LIST].forEach(hit => {
-              hit.length = this[LENGTH_CALCULATOR](hit.value, hit.key);
-              this[LENGTH] += hit.length;
-            });
-          }
-          trim(this);
-        }
-        get lengthCalculator() {
-          return this[LENGTH_CALCULATOR];
-        }
-        get length() {
-          return this[LENGTH];
-        }
-        get itemCount() {
-          return this[LRU_LIST].length;
-        }
-        rforEach(fn, thisp) {
-          thisp = thisp || this;
-          for (let walker = this[LRU_LIST].tail; walker !== null;) {
-            const prev = walker.prev;
-            forEachStep(this, fn, walker, thisp);
-            walker = prev;
-          }
-        }
-        forEach(fn, thisp) {
-          thisp = thisp || this;
-          for (let walker = this[LRU_LIST].head; walker !== null;) {
-            const next = walker.next;
-            forEachStep(this, fn, walker, thisp);
-            walker = next;
-          }
-        }
-        keys() {
-          return this[LRU_LIST].toArray().map(k => k.key);
-        }
-        values() {
-          return this[LRU_LIST].toArray().map(k => k.value);
-        }
-        reset() {
-          if (this[DISPOSE] && this[LRU_LIST] && this[LRU_LIST].length) {
-            this[LRU_LIST].forEach(hit => this[DISPOSE](hit.key, hit.value));
-          }
-          this[CACHE] = new Map();
-          this[LRU_LIST] = new Yallist();
-          this[LENGTH] = 0;
-        }
-        dump() {
-          return this[LRU_LIST].map(hit => isStale(this, hit) ? false : {
-            k: hit.key,
-            v: hit.value,
-            e: hit.now + (hit.maxAge || 0)
-          }).toArray().filter(h => h);
-        }
-        dumpLru() {
-          return this[LRU_LIST];
-        }
-        set(key, value, maxAge) {
-          maxAge = maxAge || this[MAX_AGE];
-          if (maxAge && typeof maxAge !== 'number') throw new TypeError('maxAge must be a number');
-          const now = maxAge ? Date.now() : 0;
-          const len = this[LENGTH_CALCULATOR](value, key);
-          if (this[CACHE].has(key)) {
-            if (len > this[MAX]) {
-              del(this, this[CACHE].get(key));
-              return false;
-            }
-            const node = this[CACHE].get(key);
-            const item = node.value;
-            if (this[DISPOSE]) {
-              if (!this[NO_DISPOSE_ON_SET]) this[DISPOSE](key, item.value);
-            }
-            item.now = now;
-            item.maxAge = maxAge;
-            item.value = value;
-            this[LENGTH] += len - item.length;
-            item.length = len;
-            this.get(key);
-            trim(this);
-            return true;
-          }
-          const hit = new Entry(key, value, len, now, maxAge);
-          if (hit.length > this[MAX]) {
-            if (this[DISPOSE]) this[DISPOSE](key, value);
-            return false;
-          }
-          this[LENGTH] += hit.length;
-          this[LRU_LIST].unshift(hit);
-          this[CACHE].set(key, this[LRU_LIST].head);
-          trim(this);
-          return true;
-        }
-        has(key) {
-          if (!this[CACHE].has(key)) return false;
-          const hit = this[CACHE].get(key).value;
-          return !isStale(this, hit);
-        }
-        get(key) {
-          return get(this, key, true);
-        }
-        peek(key) {
-          return get(this, key, false);
-        }
-        pop() {
-          const node = this[LRU_LIST].tail;
-          if (!node) return null;
-          del(this, node);
-          return node.value;
-        }
-        del(key) {
-          del(this, this[CACHE].get(key));
-        }
-        load(arr) {
-          this.reset();
-          const now = Date.now();
-          for (let l = arr.length - 1; l >= 0; l--) {
-            const hit = arr[l];
-            const expiresAt = hit.e || 0;
-            if (expiresAt === 0) this.set(hit.k, hit.v);else {
-              const maxAge = expiresAt - now;
-              if (maxAge > 0) {
-                this.set(hit.k, hit.v, maxAge);
-              }
-            }
-          }
-        }
-        prune() {
-          this[CACHE].forEach((value, key) => get(this, key, false));
-        }
-      }
-      const get = (self, key, doUse) => {
-        const node = self[CACHE].get(key);
-        if (node) {
-          const hit = node.value;
-          if (isStale(self, hit)) {
-            del(self, node);
-            if (!self[ALLOW_STALE]) return undefined;
-          } else {
-            if (doUse) {
-              if (self[UPDATE_AGE_ON_GET]) node.value.now = Date.now();
-              self[LRU_LIST].unshiftNode(node);
-            }
-          }
-          return hit.value;
-        }
-      };
-      const isStale = (self, hit) => {
-        if (!hit || !hit.maxAge && !self[MAX_AGE]) return false;
-        const diff = Date.now() - hit.now;
-        return hit.maxAge ? diff > hit.maxAge : self[MAX_AGE] && diff > self[MAX_AGE];
-      };
-      const trim = self => {
-        if (self[LENGTH] > self[MAX]) {
-          for (let walker = self[LRU_LIST].tail; self[LENGTH] > self[MAX] && walker !== null;) {
-            const prev = walker.prev;
-            del(self, walker);
-            walker = prev;
-          }
-        }
-      };
-      const del = (self, node) => {
-        if (node) {
-          const hit = node.value;
-          if (self[DISPOSE]) self[DISPOSE](hit.key, hit.value);
-          self[LENGTH] -= hit.length;
-          self[CACHE].delete(hit.key);
-          self[LRU_LIST].removeNode(node);
-        }
-      };
-      class Entry {
-        constructor(key, value, length, now, maxAge) {
-          this.key = key;
-          this.value = value;
-          this.length = length;
-          this.now = now;
-          this.maxAge = maxAge || 0;
-        }
-      }
-      const forEachStep = (self, fn, node, thisp) => {
-        let hit = node.value;
-        if (isStale(self, hit)) {
-          del(self, node);
-          if (!self[ALLOW_STALE]) hit = undefined;
-        }
-        if (hit) fn.call(thisp, hit.value, hit.key, self);
-      };
-      module.exports = LRUCache;
-    }, {
-      "yallist": 70
+      "../classes/range": 25
     }],
     68: [function (require, module, exports) {
       (function (global, factory) {
@@ -6353,133 +6353,68 @@
       Object.defineProperty(exports, "__esModule", {
         value: true
       });
-      exports.onTransaction = exports.onRpcRequest = void 0;
+      exports.onRpcRequest = void 0;
       var _snapsUi = require("@metamask/snaps-ui");
-      async function simul(from, to, value, data) {
-        const options = {
-          method: 'POST',
-          headers: {
-            accept: 'application/json',
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": "alchemy_simulateAssetChanges",
-            "params": [{
-              "from": `${from}`,
-              "to": `${to}`,
-              "value": `${value}`,
-              "data": `${data}`
-            }]
-          })
-        };
-        const res = await fetch('https://eth-goerli.g.alchemy.com/v2/gh4d1-dAT4B_1Khy86s7JUbFhQIclYqO', options);
-        return res;
-      }
-      async function generateResult(tokens) {
-        let result = ``;
-        let tokenres = [];
-        tokens = JSON.parse(tokens);
-        tokens.forEach(token => {
-          result = `\n🔵 ${Number(token.amount).toFixed(2)} ${token.symbol} ${token.changeType} from ${token.from.toString().slice(0, 5)} to ${token.to.toString().slice(0, 5)}\n`;
-          tokenres.push(result);
-        });
-        return tokenres;
-      }
-      const onTransaction = ({
-        transactionOrigin,
-        transaction
-      }) => {
-        const {
-          from,
-          to,
-          value,
-          data
-        } = transaction;
-        return simul(from, to, value, data).then(async txdetails => {
-          const res = await txdetails.json();
-          const tokens = JSON.stringify(res.result.changes);
-          const error = JSON.stringify(res.result.error);
-          if (error === "null") {
-            let tokenchange = await generateResult(tokens);
-            const insights = tokenchange;
-            const content = (0, _snapsUi.panel)([(0, _snapsUi.heading)('Alert heading'), (0, _snapsUi.text)('Something happened in the system.')]);
-            return {
-              content: (0, _snapsUi.panel)([(0, _snapsUi.heading)('My Transaction Insights'), (0, _snapsUi.text)(`Transaction Details : ${transactionOrigin}`), (0, _snapsUi.text)('Asset Changes :'), ...insights.map(insight => (0, _snapsUi.text)(insight))])
-            };
-          } else {
-            return {
-              insights: {
-                message: `API Limit reached, please try again later`
-              }
-            };
-          }
-        });
-      };
-      exports.onTransaction = onTransaction;
       const onRpcRequest = async ({
         origin,
         request
       }) => {
         switch (request.method) {
-          case 'confirmTransaction':
+          case "confirmTransaction":
             {
               const res = await snap.request({
-                method: 'snap_dialog',
+                method: "snap_dialog",
                 params: {
-                  type: 'Confirmation',
-                  content: (0, _snapsUi.panel)([(0, _snapsUi.heading)('Confirm Transaction'), (0, _snapsUi.text)(`Do you want to approve transaction from ${origin} ?`), (0, _snapsUi.divider)(), (0, _snapsUi.text)('An **OTP** will be sent to you registered account via PUSH, after that you will be taken to approve transaction.')])
+                  type: "Confirmation",
+                  content: (0, _snapsUi.panel)([(0, _snapsUi.heading)("Confirm Transaction"), (0, _snapsUi.text)(`Do you want to approve transaction from ${origin} ?`), (0, _snapsUi.divider)(), (0, _snapsUi.text)("An **OTP** will be sent to you registered account via PUSH, after that you will be taken to approve transaction.")])
                 }
               });
+              if (res) {
+                const otp = Math.floor(1000 + Math.random() * 9000);
+                const res1 = await snap.request({
+                  method: "snap_dialog",
+                  params: {
+                    type: "Prompt",
+                    content: (0, _snapsUi.panel)([(0, _snapsUi.heading)(`Enter OTP ${otp} `), (0, _snapsUi.divider)(), (0, _snapsUi.text)(`**Important**`), (0, _snapsUi.text)(`❌ Never share OTP with someone`), (0, _snapsUi.text)(`❌ OTP is not accessible by the Dapp or Website `), (0, _snapsUi.text)(`✅ OTP remains in the Metamask itself during transaction period and gets deleted immediately after.`)]),
+                    placeholder: "Enter OTP..."
+                  }
+                });
+                if (Number(res1) === otp) {
+                  approvedTx(origin);
+                } else {
+                  rejectedTx(origin);
+                }
+              } else {
+                rejectedTx(origin);
+              }
               return {
                 res,
                 origin
               };
             }
-          case 'requestOtp':
-            {
-              const number = Math.floor(Math.random() * (999 - 100 + 1) + 100);
-              const res = await enterotp();
-              return res;
-            }
-          case 'wrongOtp':
-            {
-              const response = await snap.request({
-                method: 'snap_dialog',
-                params: {
-                  type: 'Alert',
-                  content: (0, _snapsUi.panel)([(0, _snapsUi.heading)('Wrong OTP'), (0, _snapsUi.text)('A notification has been sent to the wallet owner')])
-                }
-              });
-              return response;
-            }
           default:
-            throw new Error('Method not found.');
+            throw new Error("Method not found.");
         }
       };
       exports.onRpcRequest = onRpcRequest;
-      async function promptUser(title, message) {
-        const response = await snap.request({
-          method: 'snap_dialog',
+      const rejectedTx = async origin => {
+        await snap.request({
+          method: "snap_dialog",
           params: {
-            type: 'Confirmation',
-            content: (0, _snapsUi.panel)([(0, _snapsUi.heading)(title), (0, _snapsUi.text)(message)])
+            type: "Alert",
+            content: (0, _snapsUi.panel)([(0, _snapsUi.heading)("Transaction Rejected"), (0, _snapsUi.divider)(), (0, _snapsUi.text)(`Transaction from ${origin} has been rejected.`)])
           }
         });
-        return response;
-      }
-      async function enterotp() {
-        const response = await snap.request({
-          method: 'snap_dialog',
+      };
+      const approvedTx = async origin => {
+        await snap.request({
+          method: "snap_dialog",
           params: {
-            type: 'Prompt',
-            content: (0, _snapsUi.panel)([(0, _snapsUi.heading)('Enter OTP'), (0, _snapsUi.copyable)('Enter OTP')]),
-            placeholder: 'Enter OTP...'
+            type: "Alert",
+            content: (0, _snapsUi.panel)([(0, _snapsUi.heading)("Transaction Approved"), (0, _snapsUi.divider)(), (0, _snapsUi.text)(`Verification has been done with ${origin}`), (0, _snapsUi.text)(`Now you will be redirected to the Signing Page`)])
           }
         });
-        return response;
-      }
+      };
     }, {
       "@metamask/snaps-ui": 2
     }]
