@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@metamask/snaps-types": "^0.30.0",
+    "@metamask/snaps-ui": "^0.30.0",
     "@next/font": "13.2.1",
     "@types/node": "18.14.1",
     "@types/react": "18.0.28",
